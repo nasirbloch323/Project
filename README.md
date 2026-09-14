@@ -1,5 +1,10 @@
 # To-Do API — Flask + Docker + Jenkins CI/CD
 
+![Python](https://img.shields.io/badge/Python-3.12-blue?logo=python&logoColor=white)
+![Flask](https://img.shields.io/badge/Flask-3.0-black?logo=flask&logoColor=white)
+![Docker](https://img.shields.io/badge/Docker-ready-2496ED?logo=docker&logoColor=white)
+![Jenkins](https://img.shields.io/badge/CI%2FCD-Jenkins-D24939?logo=jenkins&logoColor=white)
+
 A small full-stack to-do list application: a Flask REST API backed by in-memory storage, a vanilla JS front end, containerized with Docker, and deployed automatically through a Jenkins CI/CD pipeline on every push to GitHub.
 
 This project was built as a hands-on exercise covering the full path from code → container → automated build → automated deploy.
@@ -9,7 +14,9 @@ This project was built as a hands-on exercise covering the full path from code �
 ## Table of Contents
 
 - [Overview](#overview)
+- [Architecture](#architecture)
 - [Tech Stack](#tech-stack)
+- [Prerequisites](#prerequisites)
 - [Project Structure](#project-structure)
 - [Running Locally (without Docker)](#running-locally-without-docker)
 - [Running with Docker](#running-with-docker)
@@ -17,7 +24,7 @@ This project was built as a hands-on exercise covering the full path from code �
 - [CI/CD with Jenkins](#cicd-with-jenkins)
 - [GitHub Webhook Setup](#github-webhook-setup)
 - [Live Deployment](#live-deployment)
-- [Reflection](#reflection)
+- [Author](#author)
 
 ---
 
@@ -29,7 +36,34 @@ The app lets a user create tasks, mark them done, edit their titles, and delete 
 2. A **GitHub webhook** notifies **Jenkins** immediately.
 3. Jenkins **checks out** the latest code, **builds** a Docker image, and **deploys** it — replacing the previously running container — with zero manual steps.
 
-Data is stored in memory (no database), so it resets whenever the container restarts. That trade-off was intentional — see [Reflection](#reflection) for why.
+Data is stored in memory (no database), so it resets whenever the container restarts.
+
+---
+
+## Architecture
+
+```
+ ┌──────────┐   git push    ┌──────────┐   webhook    ┌──────────┐
+ │ Developer │ ────────────▶ │  GitHub   │ ────────────▶ │ Jenkins   │
+ └──────────┘               └──────────┘               └────┬─────┘
+                                                              │ checkout, build,
+                                                              │ deploy
+                                                              ▼
+                                                   ┌────────────────────┐
+                                                   │  Docker (EC2 host)  │
+                                                   │  ┌──────────────┐  │
+                                                   │  │ todo-app     │  │
+                                                   │  │ container    │  │
+                                                   │  │ (Flask API)  │  │
+                                                   │  └──────┬───────┘  │
+                                                   └─────────┼─────────┘
+                                                              │ port 3000
+                                                              ▼
+                                                        ┌───────────┐
+                                                        │  Browser   │
+                                                        │  (User)    │
+                                                        └───────────┘
+```
 
 ---
 
@@ -43,6 +77,19 @@ Data is stored in memory (no database), so it resets whenever the container rest
 | CI/CD             | Jenkins (Pipeline / Jenkinsfile)    |
 | Source control    | Git + GitHub                        |
 | Trigger           | GitHub Webhook                      |
+
+---
+
+## Prerequisites
+
+To run this project you'll need:
+
+- **Docker** (20.10+) — [installation guide](https://docs.docker.com/engine/install/)
+- **Python 3.12+** — only needed if running without Docker
+- **Git**
+- **Jenkins** (2.4+) with Docker access — only needed to reproduce the CI/CD pipeline
+
+No database, API keys, or `.env` file is required — the app has no external dependencies beyond Flask itself.
 
 ---
 
@@ -197,19 +244,11 @@ The app is deployed on an AWS EC2 instance, built and redeployed automatically b
 
 ---
 
-## Reflection
+---
 
-**Trickiest part:** it wasn't the app logic — the Flask routes and storage model are simple by design. The trickiest parts were the ones that don't show up just from reading the code: a route handler that had ended up nested inside another function due to a copy/paste indentation slip (which silently broke task creation), a stray control character that crept into the file during a transfer between environments and caused a `SyntaxError` only on deploy, and later a Docker socket permission error (`permission denied ... docker.sock`) where the Jenkins user had been added to the `docker` group but the service hadn't been restarted to pick it up. None of these are visible from a code review — you have to actually run the thing, check logs, or inspect bytes to catch them.
+## Author
 
-**Why I made the choices I did:**
-- **In-memory storage instead of a database** — the scope here is a small CRUD demo and a CI/CD exercise, not a production task manager. A database adds setup overhead (migrations, connection handling, another moving part in the container) without teaching anything new about the API or pipeline design. The trade-off — state resets on restart — is explicit and acceptable for this project's purpose.
-- **Vanilla JS front end, no framework** — for a UI this small, a framework means a build step and a heavier image for no real benefit. Plain HTML/CSS/JS keeps the whole thing understandable in one file.
-- **Jenkins deploys directly on the same host it builds on** — no registry push, no separate deploy target. This keeps the pipeline simple and matches the scope of the project (single server), though it means the deploy step is tightly coupled to "wherever Jenkins happens to run," which wouldn't scale past one environment.
-- **Both `PATCH /tasks/<id>` and `PATCH /tasks/<id>/done`** — the general PATCH is more RESTful and flexible (partial updates to title and/or done in one call), while the `/done` shortcut stayed because it's a simpler, single-purpose endpoint some clients might prefer. No real cost to supporting both.
+**Nasir Mehmood**
+GitHub: [@nasirbloch323](https://github.com/nasirbloch323)
 
-**With another day, I'd:**
-- Swap in-memory storage for SQLite — the single highest-value change, since it would survive container restarts and redeploys without adding real complexity.
-- Add an actual test suite (`pytest` + Flask's test client) and run it as a Jenkins stage, instead of relying on manual `curl` checks. Right now the pipeline proves the image *builds and starts*, not that the API *behaves correctly*.
-- Push the built image to a registry (Docker Hub or ECR) instead of deploying straight from the Jenkins host — this would decouple "where it's built" from "where it runs" and make it possible to deploy to a different or additional server later.
-- Replace Flask's built-in dev server with a production WSGI server (gunicorn) in the Dockerfile — the current setup explicitly warns it isn't production-ready, and it's a five-minute fix.
-- Add rollback logic to the Deploy stage — right now, if a bad build gets deployed, there's no automatic way back to the last known-good container.
+LinkedIn: [nasir-mehmood-041908205](https://www.linkedin.com/in/nasir-mehmood-041908205)
