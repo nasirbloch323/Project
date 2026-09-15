@@ -247,24 +247,36 @@ The app is deployed on an AWS EC2 instance, built and redeployed automatically b
 
 ---
 
-## Reflection
 
-**Trickiest part:** it wasn't the app logic — the Flask routes and storage model are simple by design. The trickiest parts were the ones that don't show up just from reading the code: a route handler that had ended up nested inside another function due to a copy/paste indentation slip (which silently broke task creation), a stray control character that crept into the file during a transfer between environments and caused a `SyntaxError` only on deploy, and later a Docker socket permission error (`permission denied ... docker.sock`) where the Jenkins user had been added to the `docker` group but the service hadn't been restarted to pick it up. None of these are visible from a code review — you have to actually run the thing, check logs, or inspect bytes to catch them.
+# Project Reflection — Todo App (Docker + Jenkins)
 
-**Why I made the choices I did:**
-- **In-memory storage instead of a database** — the scope here is a small CRUD demo and a CI/CD exercise, not a production task manager. A database adds setup overhead (migrations, connection handling, another moving part in the container) without teaching anything new about the API or pipeline design. The trade-off — state resets on restart — is explicit and acceptable for this project's purpose.
-- **Vanilla JS front end, no framework** — for a UI this small, a framework means a build step and a heavier image for no real benefit. Plain HTML/CSS/JS keeps the whole thing understandable in one file.
-- **Jenkins deploys directly on the same host it builds on** — no registry push, no separate deploy target. This keeps the pipeline simple and matches the scope of the project (single server), though it means the deploy step is tightly coupled to "wherever Jenkins happens to run," which wouldn't scale past one environment.
-- **Both `PATCH /tasks/<id>` and `PATCH /tasks/<id>/done`** — the general PATCH is more RESTful and flexible (partial updates to title and/or done in one call), while the `/done` shortcut stayed because it's a simpler, single-purpose endpoint some clients might prefer. No real cost to supporting both.
+## Trickiest Part
 
-**With another day, I'd:**
-- Swap in-memory storage for SQLite — the single highest-value change, since it would survive container restarts and redeploys without adding real complexity.
-- Add an actual test suite (`pytest` + Flask's test client) and run it as a Jenkins stage, instead of relying on manual `curl` checks. Right now the pipeline proves the image *builds and starts*, not that the API *behaves correctly*.
-- Push the built image to a registry (Docker Hub or ECR) instead of deploying straight from the Jenkins host — this would decouple "where it's built" from "where it runs" and make it possible to deploy to a different or additional server later.
-- Replace Flask's built-in dev server with a production WSGI server (gunicorn) in the Dockerfile — the current setup explicitly warns it isn't production-ready, and it's a five-minute fix.
-- Add rollback logic to the Deploy stage — right now, if a bad build gets deployed, there's no automatic way back to the last known-good container.
+It wasn't the app logic — the Flask routes and storage model are simple by design. The trickiest parts were ones that don't show up just from reading the code:
 
----
+- **Indentation bug** — a route handler ended up nested inside another function due to a copy/paste slip. Task creation silently failed, with no visible error.
+- **Hidden character bug** — a stray control character crept into the file during a transfer between environments. It caused a `SyntaxError`, but only at deploy time — nothing looked wrong in the code itself.
+- **Docker permission error** — the Jenkins user was added to the `docker` group, but the service wasn't restarted to pick up the change. Result: `permission denied ... docker.sock`.
+
+**Common thread:** none of these were catchable by code review alone — they only surfaced by actually running the app, checking logs, or inspecting raw bytes.
+
+## Why I Made These Choices
+
+| Decision | Reasoning |
+|---|---|
+| In-memory storage (no database) | Scope is a small CRUD + CI/CD demo, not a production task manager. A database adds setup overhead (migrations, connections) without teaching anything new about the API or pipeline. State resetting on restart is an explicit, acceptable trade-off. |
+| Vanilla JS frontend (no framework) | For a UI this small, a framework means a build step and heavier image for no real benefit. Plain HTML/CSS/JS keeps everything understandable in one file. |
+| Jenkins deploys on the same host it builds on | Keeps the pipeline simple, matches single-server scope. Trade-off: the deploy step is tightly coupled to wherever Jenkins runs — won't scale past one environment. |
+| Both `PATCH /tasks/<id>` and `PATCH /tasks/<id>/done` | The general PATCH is RESTful and flexible; the `/done` shortcut is simpler for clients that only need that. No real cost to supporting both. |
+
+## With Another Day, I'd
+
+1. **Swap in-memory storage for SQLite** — highest-value change; survives container restarts without adding real complexity.
+2. **Add a real test suite** (`pytest` + Flask test client) as a Jenkins stage — right now the pipeline only proves the image builds and starts, not that the API behaves correctly.
+3. **Push the built image to a registry** (Docker Hub / ECR) instead of deploying straight from the Jenkins host — decouples "where it's built" from "where it runs."
+4. **Replace Flask's dev server with `gunicorn`** — current setup isn't production-ready; a five-minute fix.
+5. **Add rollback logic to the Deploy stage** — currently, a bad build has no automatic way back to the last known-good container.
+- 
 
 ## Author
 
